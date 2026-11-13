@@ -53,12 +53,12 @@ async function settle(ms = 0) {
 	});
 }
 
-/** Drives the hook through the 3s countdown into an active native recording. */
+/** Drives the hook into an active native recording without advancing the clock. */
 async function startNativeRecording(view: RecorderView) {
 	await act(async () => {
 		view.result.current.toggleRecording();
 	});
-	await settle(3_500);
+	await settle();
 	expect(view.result.current.recording).toBe(true);
 }
 

@@ -113,13 +113,13 @@ async function settle(ms = 0) {
 	});
 }
 
-/** Through the 3 s countdown into a running take. */
+/** Starts a take without advancing the fake clock. */
 async function startTake(view: RecorderView) {
 	await settle();
 	await act(async () => {
 		view.result.current.toggleRecording();
 	});
-	await settle(3_500);
+	await settle();
 	expect(view.result.current.recording).toBe(true);
 }
 

@@ -112,7 +112,7 @@ describe("useScreenRecorder native Linux webcam attachment", () => {
 		await act(async () => {
 			view.result.current.toggleRecording();
 		});
-		await settle(3_500);
+		await settle();
 		expect(view.result.current.recording).toBe(true);
 
 		await act(async () => {
@@ -154,7 +154,7 @@ describe("useScreenRecorder native Linux prepare", () => {
 		await act(async () => {
 			answerPicker({ success: true, recordingId: 42 });
 		});
-		await settle(3_500);
+		await settle();
 		expect(api.startNativeLinuxRecording).toHaveBeenCalledTimes(1);
 		expect(api.startNativeLinuxRecording).toHaveBeenCalledWith(
 			expect.objectContaining({ recordingId: 42 }),

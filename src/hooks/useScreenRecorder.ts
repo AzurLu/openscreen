@@ -1140,29 +1140,11 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 		finalizeNativeLinuxRecording,
 	]);
 
-	const safeShowCountdownOverlay = async (value: number, runId: number) => {
-		try {
-			await window.electronAPI.showCountdownOverlay(value, runId);
-			return true;
-		} catch (error) {
-			console.warn("Failed to show countdown overlay:", error);
-			return false;
-		}
-	};
-
 	const cancelCountdown = () => {
 		const activeRunId = countdownRunId.current;
 		countdownRunId.current += 1;
 		setCountdownActive(false);
 		void safeHideCountdownOverlay(activeRunId);
-	};
-
-	const safeSetCountdownOverlayValue = async (value: number, runId: number) => {
-		try {
-			await window.electronAPI.setCountdownOverlayValue(value, runId);
-		} catch (error) {
-			console.warn("Failed to update countdown overlay value:", error);
-		}
 	};
 
 	const isCountdownRunActive = (runId?: number) =>
@@ -1755,33 +1737,8 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 
 		let overlayHiddenBeforeStart = false;
 		try {
-			const values = [3, 2, 1];
-			const overlayShown = await safeShowCountdownOverlay(values[0], runId);
-
-			if (countdownRunId.current !== runId) {
-				return;
-			}
-
-			for (const value of values) {
-				if (countdownRunId.current !== runId) {
-					return;
-				}
-
-				if (overlayShown && value !== values[0]) {
-					await safeSetCountdownOverlayValue(value, runId);
-
-					if (countdownRunId.current !== runId) {
-						return;
-					}
-				}
-
-				await new Promise((resolve) => window.setTimeout(resolve, 1000));
-			}
-
-			if (countdownRunId.current !== runId) {
-				return;
-			}
-
+			// Start as soon as source and permission preflight completes. Keep the
+			// run token and overlay cleanup so cancellation still invalidates startup.
 			setCountdownActive(false);
 			await safeHideCountdownOverlay(runId);
 			overlayHiddenBeforeStart = true;
