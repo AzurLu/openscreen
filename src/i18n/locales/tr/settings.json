@@ -177,7 +177,7 @@
 		"editWord": "\"{{word}}\" kelimesini düzenle",
 		"laneFeedsCaptions": "Altyazılar bu kanaldan gömülür.",
 		"insertedWord": "Sizin eklediğiniz kelime. Bunun sesi yok.",
-		"whisperHint": "Döküm yerel Whisper kullanır — bilgisayarınızda çalışır, hiçbir veri cihazdan çıkmaz.",
+		"whisperHint": "Döküm yerel ASR kullanır — bilgisayarınızda çalışır, hiçbir veri cihazdan çıkmaz.",
 		"insertAria": "Yeni kelime",
 		"editorAria": "{{filename}} dökümü",
 		"transcribeNow": "Şimdi dökümünü çıkar",

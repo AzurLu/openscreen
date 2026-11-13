@@ -5,6 +5,7 @@ import {
 	finalizeCaptionSegmentsForPlayback,
 	groupPhraseCaptionSegmentsIntoLines,
 	groupTimedCaptionWordsIntoLines,
+	splitMergedCaptionsByWordBounds,
 } from "./annotationsFromCaptions";
 
 describe("groupPhraseCaptionSegmentsIntoLines", () => {
@@ -108,5 +109,42 @@ describe("finalizeCaptionSegmentsForPlayback", () => {
 
 		expect(lines[0]!.endSec).toBeCloseTo(1, 5);
 		expect(lines[1]).toMatchObject({ startSec: 1, endSec: 2 });
+	});
+});
+
+describe("CJK caption display", () => {
+	it("keeps all 55 aligned tokens and the same line boundaries as English", () => {
+		const words = Array.from({ length: 55 }, (_, i) => ({
+			text: ["今", "天", "测", "试", "中", "文", "。 "][i % 7],
+			startSec: i * 0.25,
+			endSec: (i + 1) * 0.25,
+		}));
+		const original = structuredClone(words);
+		const chinese = groupTimedCaptionWordsIntoLines(words, 2, 7);
+		const english = groupTimedCaptionWordsIntoLines(
+			words.map((word, i) => ({ ...word, text: `word${i}` })),
+			2,
+			7,
+		);
+		expect(chinese).toHaveLength(8);
+		expect(chinese.map(({ startSec, endSec }) => [startSec, endSec])).toEqual(
+			english.map(({ startSec, endSec }) => [startSec, endSec]),
+		);
+		expect(chinese.map((line) => line.text).join("")).toBe(
+			words.map((word) => word.text.trim()).join(""),
+		);
+		expect(words).toEqual(original);
+	});
+
+	it("removes CJK display gaps without changing phrase splitting or interpolation", () => {
+		expect(
+			splitMergedCaptionsByWordBounds([{ startSec: 0, endSec: 4, text: "今 天 测 试" }], 2, 2),
+		).toEqual([
+			{ startSec: 0, endSec: 2, text: "今天" },
+			{ startSec: 2, endSec: 4, text: "测试" },
+		]);
+		expect(
+			splitMergedCaptionsByWordBounds([{ startSec: 0, endSec: 4, text: "今 天 测 试" }], 2, 7),
+		).toEqual([{ startSec: 0, endSec: 4, text: "今天测试" }]);
 	});
 });

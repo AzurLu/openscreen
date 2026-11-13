@@ -177,7 +177,7 @@
 		"editWord": "编辑“{{word}}”",
 		"laneFeedsCaptions": "字幕从这条轨道烧录。",
 		"insertedWord": "手动添加的文字，没有对应音频",
-		"whisperHint": "转录使用本地 Whisper — 在您的电脑上运行，数据不会离开本设备。",
+		"whisperHint": "转录使用本地 ASR — 在您的电脑上运行，数据不会离开本设备。",
 		"insertAria": "新词",
 		"editorAria": "{{filename}} 的转录",
 		"transcribeNow": "立即转录",

@@ -41,6 +41,12 @@ describe("useTranscriptionLabel telemetry suffix", () => {
 
 	// A healthy GPU run gets the speed but no backend name — labelling every
 	// successful run "Vulkan" would be noise, and only the CPU case is actionable.
+	it("identifies the optional Qwen model without a CPU fallback label", () => {
+		expect(labelOf(running({ backend: "qwen3-mlx", rtf: 0.5 }))).toBe(
+			"mediaStage.transcribing 45% · Qwen3-ASR 1.7B · 8-bit · 2.0×",
+		);
+	});
+
 	it("shows the speed but not the backend on a GPU run", () => {
 		expect(labelOf(running({ backend: "whispercpp-vulkan", rtf: 0.5 }))).toBe(
 			"mediaStage.transcribing 45% · 2.0×",

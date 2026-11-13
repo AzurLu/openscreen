@@ -1,15 +1,30 @@
 # Transcription and captions
 
 OpenScreen turns recorded audio into on-device text, and renders that text as
-captions over both the preview and the export. The recogniser runs natively on
-the desktop — no network calls, no Python — and feeds a single transcript per
-asset into a caption layer that derives its cues on every render. Code lives
+captions over both the preview and the export. The default Whisper recogniser
+runs natively on the desktop; an optional Qwen provider uses local Python/MLX
+on Apple Silicon. Both run inference without network calls and feed a single
+transcript per asset into a caption layer that derives its cues on every render. Code lives
 in `electron/stt/` (main-process STT pipeline), `electron/native/whisper-stt/`
 (the C++ helper that links whisper.cpp directly), and
 `src/lib/ai-edition/captions/` (the caption layer that derives its cues from
 the transcript).
 
+## Optional Qwen provider
+
+`stt-provider.json` in Electron's user-data directory can select `qwen3-mlx`
+and absolute paths to its Python runtime, server script, ASR model, and aligner.
+Without that configuration, Whisper remains the default. Qwen uses 30-second
+chunks, local OpenCC simplification before forced alignment, and the same
+word-timestamp contract as Whisper. Its timestamps bypass the optional Whisper
+CTC refinement. The application starts the sidecar on loopback and waits until
+both models are loaded. See [Qwen setup and protocol](../engineering/qwen-asr.md)
+for the opt-in installer, pinned weights, and cancellation limitations.
+
 ## Pipeline
+
+The diagram below shows the default Whisper pipeline; Qwen replaces its helper
+and alignment stage while retaining the same transcript and caption flow.
 
 ```mermaid
 flowchart LR

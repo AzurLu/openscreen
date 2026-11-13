@@ -33,7 +33,7 @@ vi.mock("@/contexts/I18nContext", () => ({
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() } }));
 
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { assetSchema, createEmptyDocument } from "@/lib/ai-edition/schema";
+import { type AxcutTranscript, assetSchema, createEmptyDocument } from "@/lib/ai-edition/schema";
 import { useProjectStore } from "@/lib/ai-edition/store/projectStore";
 import { MediaStage } from "./MediaStage";
 
@@ -104,4 +104,27 @@ describe("MediaStage Regenerate button", () => {
 		fireEvent.click(regenerate);
 		expect(transcription.request).not.toHaveBeenCalled();
 	});
+});
+
+it("shows a readable CJK transcript summary without rewriting source segments", async () => {
+	const transcript: AxcutTranscript = {
+		assetId: "asset-1",
+		language: "zh",
+		words: [],
+		segments: ["你", "说：“", "好", "的。", "”"].map((text, i) => ({
+			id: `s${i}`,
+			kind: "speech",
+			text,
+			startSec: i,
+			endSec: i + 1,
+			wordIds: [],
+		})),
+	};
+	const original = structuredClone(transcript);
+	useProjectStore.setState((state) => ({
+		document: state.document ? { ...state.document, transcripts: [transcript] } : null,
+	}));
+	await openDetail();
+	expect(screen.getByText("你说：“好的。”")).toBeVisible();
+	expect(useProjectStore.getState().document?.transcripts).toEqual([original]);
 });

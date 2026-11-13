@@ -755,3 +755,63 @@ describe("captions over an inserted word", () => {
 		);
 	});
 });
+
+describe("CJK preview, export and translation text", () => {
+	function chineseTranscript(): AxcutTranscript {
+		const words = ["使用", "“", "OpenScreen", "”", "录", "制。"].map((text, i) => ({
+			id: `w${i}`,
+			segmentId: `s${i}`,
+			text,
+			startSec: i * 0.25,
+			endSec: (i + 1) * 0.25,
+		}));
+		return {
+			assetId: "asset-1",
+			language: "zh",
+			words,
+			segments: words.map((word) => ({
+				id: word.segmentId,
+				kind: "speech",
+				text: word.text,
+				startSec: word.startSec,
+				endSec: word.endSec,
+				wordIds: [word.id],
+			})),
+		};
+	}
+
+	it("uses the same unspaced text and timings in preview cues and export regions", () => {
+		const source = chineseTranscript();
+		const original = structuredClone(source);
+		const settings = {
+			...DEFAULT_CAPTION_SETTINGS,
+			enabled: true,
+			minWordsPerLine: 2,
+			maxWordsPerLine: 7,
+		};
+		const cues = deriveCaptionCues(doc({ transcripts: [source] }), settings, {});
+		expect(cues).toEqual([
+			{ id: "caption-0", startMs: 0, endMs: 1500, text: "使用“OpenScreen”录制。" },
+		]);
+		const regions = captionCuesToTextRegions(cues, settings, 16 / 9);
+		expect(regions.map(({ content, startMs, endMs }) => ({ content, startMs, endMs }))).toEqual([
+			{ content: "使用“OpenScreen”录制。", startMs: 0, endMs: 1500 },
+		]);
+		expect(source).toEqual(original);
+	});
+
+	it("keeps translation-unit source IDs and spans while joining Chinese text", () => {
+		const source = chineseTranscript();
+		const original = structuredClone(source);
+		expect(captionTranslationUnits(source)).toEqual([
+			{
+				id: "u:s0",
+				segmentIds: ["s0", "s1", "s2", "s3", "s4", "s5"],
+				startSec: 0,
+				endSec: 1.5,
+				text: "使用“OpenScreen”录制。",
+			},
+		]);
+		expect(source).toEqual(original);
+	});
+});

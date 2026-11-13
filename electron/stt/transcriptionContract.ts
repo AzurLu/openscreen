@@ -10,10 +10,9 @@
  * contract and don't need to move.
  */
 
-/** A word-level segment with timestamps from whisper.cpp's native DTW token
- *  timestamps (`t_dtw`, computed with the SMALL aheads preset — see
- *  technical-documentation/architecture/transcription-and-captions.md § Decision rationale). Absolute seconds
- *  in the source recording. */
+/** A word-level segment with timestamps from the selected recognizer/aligner.
+ *  Whisper uses DTW; Qwen uses its forced aligner. Absolute seconds in the
+ *  source recording (see technical-documentation/architecture/transcription-and-captions.md). */
 export interface SttWordSegment {
 	word: string;
 	startSec: number;
@@ -36,7 +35,8 @@ export type SttBackend =
 	| "whispercpp-metal"
 	| "whispercpp-vulkan"
 	| "whispercpp-cuda"
-	| "whispercpp-cpu";
+	| "whispercpp-cpu"
+	| "qwen3-mlx";
 
 /**
  * Wall-clock cost of a transcription, measured by the helper around
@@ -71,7 +71,7 @@ export interface SttStatusEvent {
 	/** Total bytes for the in-flight download. */
 	totalBytes?: number;
 	/** Which model is downloading. */
-	model?: "whisper" | "silero-vad";
+	model?: "whisper" | "silero-vad" | "qwen3-mlx";
 	/**
 	 * Seconds of audio transcribed so far, and the total for this request. Only
 	 * when `phase === "transcribe"`. Progress is reported per CHUNK (see

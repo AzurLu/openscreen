@@ -184,6 +184,38 @@ describe("WhisperServerManager", () => {
 		}
 	}
 
+	it.each([
+		"qwen3-mlx",
+		"whispercpp-cpu",
+	] as const)("preserves short/zero-duration Qwen alignment while retaining Whisper's span floor (%s)", async (backend) => {
+		const result = await transcribeWith({
+			backend,
+			segments: [
+				{
+					text: "短零",
+					start: 1,
+					end: 1.01,
+					words: [
+						{ word: "短", start: 1, end: 1.01 },
+						{ word: "零", start: 1.01, end: 1.01 },
+					],
+				},
+			],
+		});
+		expect(result.segments[0].endSec).toBe(backend === "qwen3-mlx" ? 1.01 : 1.05);
+		expect(result.wordSegments.map(({ startSec, endSec }) => [startSec, endSec])).toEqual(
+			backend === "qwen3-mlx"
+				? [
+						[1, 1.01],
+						[1.01, 1.01],
+					]
+				: [
+						[1, 1.02],
+						[1.01, 1.03],
+					],
+		);
+	});
+
 	it("reads the helper's timing block off an /inference response", async () => {
 		const result = await transcribeWith({
 			segments: [],
@@ -884,5 +916,133 @@ describe("WhisperServerManager", () => {
 			vi.unstubAllGlobals();
 			await rm(dir, { recursive: true, force: true });
 		}
+	});
+});
+
+describe("Qwen MLX protocol adapter", () => {
+	let dir: string;
+	const staticManager = WhisperServerManager as unknown as {
+		pickFreePort: () => Promise<number>;
+		pollUntilReady: (url: string, timeout: number, alive: () => boolean) => Promise<void>;
+	};
+	beforeEach(async () => {
+		dir = await mkdtemp(path.join(tmpdir(), "qwen runtime "));
+		await writeFile(path.join(dir, "python"), "python", { mode: 0o755 });
+		vi.spyOn(staticManager, "pickFreePort").mockResolvedValue(49152);
+		vi.spyOn(staticManager, "pollUntilReady").mockResolvedValue();
+		const { spawn } = await import("node:child_process");
+		vi.mocked(spawn).mockReset();
+		const child = Object.assign(new EventEmitter(), {
+			stdout: new EventEmitter(),
+			stderr: new EventEmitter(),
+			pid: 123,
+			kill: vi.fn(() => {
+				child.emit("exit", 0);
+				return true;
+			}),
+		});
+		vi.mocked(spawn).mockReturnValue(child as never);
+	});
+	afterEach(async () => {
+		vi.mocked(staticManager.pickFreePort).mockRestore();
+		vi.mocked(staticManager.pollUntilReady).mockRestore();
+		vi.unstubAllGlobals();
+		await rm(dir, { recursive: true, force: true });
+	});
+	function options() {
+		return {
+			modelPath: dir,
+			backend: "qwen3-mlx" as const,
+			qwenConfig: {
+				provider: "qwen3-mlx" as const,
+				pythonPath: path.join(dir, "python"),
+				serverPath: path.join(dir, "server.py"),
+				asrModelPath: dir,
+				alignerModelPath: path.join(dir, "aligner"),
+			},
+		};
+	}
+	it("spawns the configured Python with loopback/model arguments and a longer readiness window", async () => {
+		const opts = options();
+		const result = await new WhisperServerManager().start(opts);
+		const { spawn } = await import("node:child_process");
+		expect(spawn).toHaveBeenCalledWith(
+			opts.qwenConfig.pythonPath,
+			[
+				opts.qwenConfig.serverPath,
+				"--port",
+				"49152",
+				"--host",
+				"127.0.0.1",
+				"--asr-model",
+				dir,
+				"--aligner-model",
+				opts.qwenConfig.alignerModelPath,
+			],
+			{ stdio: ["ignore", "pipe", "pipe"] },
+		);
+		expect(staticManager.pollUntilReady).toHaveBeenCalledWith(
+			"http://127.0.0.1:49152",
+			120_000,
+			expect.any(Function),
+		);
+		expect(result.backend).toBe("qwen3-mlx");
+	});
+	it("does not reinterpret an MLX GPU failure as a Whisper CPU launch", async () => {
+		vi.mocked(staticManager.pollUntilReady).mockRejectedValue(new Error("GPU allocation failed"));
+		await expect(new WhisperServerManager().start(options())).rejects.toThrow(
+			"GPU allocation failed",
+		);
+		const { spawn } = await import("node:child_process");
+		expect(spawn).toHaveBeenCalledOnce();
+	});
+	it("preserves Qwen alignment even if speech intervals and a Whisper aligner are supplied", async () => {
+		const manager = new WhisperServerManager();
+		await manager.start(options());
+		const aligner = vi.fn(async () => "/whisper-aligner.gguf");
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(
+				async () =>
+					new Response(
+						JSON.stringify({
+							backend: "qwen3-mlx",
+							detected_language: "zh",
+							speech: [{ start: 0.1, end: 1.4 }],
+							segments: [
+								{
+									text: "开始",
+									start: 0.5,
+									end: 1,
+									words: [{ word: "开始", start: 0.5, end: 1, anchor: 0.7 }],
+								},
+							],
+						}),
+					),
+			),
+		);
+		const result = await manager.transcribe({
+			samples: new Float32Array(16000 * 2),
+			alignerFor: aligner,
+		});
+		expect(result.backend).toBe("qwen3-mlx");
+		expect(result.wordSegments).toEqual([
+			{ word: "开始", startSec: 0.5, endSec: 1, confidence: undefined },
+		]);
+		expect(aligner).not.toHaveBeenCalled();
+		expect(fetch).toHaveBeenCalledOnce();
+	});
+	it("sends a best-effort cancellation only to the Qwen helper", async () => {
+		const fetcher = vi.fn(async () => new Response("ok"));
+		vi.stubGlobal("fetch", fetcher);
+		new WhisperServerManager().cancel();
+		expect(fetcher).not.toHaveBeenCalled();
+		const manager = new WhisperServerManager();
+		await manager.start(options());
+		manager.cancel();
+		expect(fetcher).toHaveBeenCalledWith("http://127.0.0.1:49152/cancel", {
+			method: "POST",
+			signal: expect.any(AbortSignal),
+		});
 	});
 });

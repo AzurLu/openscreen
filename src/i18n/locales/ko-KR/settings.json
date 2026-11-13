@@ -177,7 +177,7 @@
 		"editWord": "\"{{word}}\" 편집",
 		"laneFeedsCaptions": "자막은 이 트랙에서 구워집니다.",
 		"insertedWord": "직접 추가했습니다. 해당하는 오디오가 없습니다.",
-		"whisperHint": "전사는 로컬 Whisper를 사용합니다. 이 컴퓨터에서 실행되며 데이터가 기기를 벗어나지 않습니다.",
+		"whisperHint": "전사는 로컬 ASR를 사용합니다. 이 컴퓨터에서 실행되며 데이터가 기기를 벗어나지 않습니다.",
 		"insertAria": "새 단어",
 		"editorAria": "{{filename}}의 전사",
 		"transcribeNow": "지금 전사하기",

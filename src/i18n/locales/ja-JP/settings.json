@@ -177,7 +177,7 @@
 		"editWord": "「{{word}}」を編集",
 		"laneFeedsCaptions": "字幕はこのトラックから焼き込まれます。",
 		"insertedWord": "追加した単語です。対応する音声はありません。",
-		"whisperHint": "文字起こしはローカルの Whisper を使用します。お使いのパソコン上で実行され、データが端末外に出ることはありません。",
+		"whisperHint": "文字起こしはローカルの ASR を使用します。お使いのパソコン上で実行され、データが端末外に出ることはありません。",
 		"insertAria": "新しい単語",
 		"editorAria": "{{filename}} の文字起こし",
 		"transcribeNow": "今すぐ文字起こし",

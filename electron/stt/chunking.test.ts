@@ -70,3 +70,20 @@ describe("planChunks", () => {
 		expect(chunks[chunks.length - 1].endSample).toBe(RATE);
 	});
 });
+
+describe("helper context ceiling", () => {
+	it.each([
+		30, 90,
+	])("keeps a target of %ss within a 30s maximum, including the last chunk", (targetSec) => {
+		const samples = toneWithSilences(65, [[30.1, 30.5]]);
+		const chunks = planChunks(samples, RATE, { targetSec, searchSec: 3, maxSec: 30 });
+		let end = 0;
+		for (const chunk of chunks) {
+			expect(chunk.startSample).toBe(end);
+			expect(chunk.endSample).toBeGreaterThan(chunk.startSample);
+			expect(chunk.endSample - chunk.startSample).toBeLessThanOrEqual(30 * RATE);
+			end = chunk.endSample;
+		}
+		expect(end).toBe(samples.length);
+	});
+});

@@ -177,7 +177,7 @@
 		"editWord": "„{{word}}“ bearbeiten",
 		"laneFeedsCaptions": "Die Untertitel werden aus dieser Spur gebrannt.",
 		"insertedWord": "Von dir hinzugefügt. Dazu gibt es kein Audio.",
-		"whisperHint": "Die Transkription nutzt lokales Whisper — sie läuft auf deinem Computer, es verlassen keine Daten das Gerät.",
+		"whisperHint": "Die Transkription nutzt lokales ASR — sie läuft auf deinem Computer, es verlassen keine Daten das Gerät.",
 		"insertAria": "Neues Wort",
 		"editorAria": "Transkript für {{filename}}",
 		"transcribeNow": "Jetzt transkribieren",

@@ -177,7 +177,7 @@
 		"editWord": "Editar «{{word}}»",
 		"laneFeedsCaptions": "Los subtítulos se graban desde esta pista.",
 		"insertedWord": "Añadida por ti. No hay audio para ella.",
-		"whisperHint": "La transcripción usa Whisper local: se ejecuta en tu equipo y ningún dato sale del dispositivo.",
+		"whisperHint": "La transcripción usa ASR local: se ejecuta en tu equipo y ningún dato sale del dispositivo.",
 		"insertAria": "Palabra nueva",
 		"editorAria": "Transcripción de {{filename}}",
 		"transcribeNow": "Transcribir ahora",

@@ -177,7 +177,7 @@
 		"editWord": "編輯「{{word}}」",
 		"laneFeedsCaptions": "字幕從這條軌道燒錄。",
 		"insertedWord": "由你加入。沒有對應的聲音。",
-		"whisperHint": "逐字稿使用本機 Whisper — 在您的電腦上執行，資料不會離開本裝置。",
+		"whisperHint": "逐字稿使用本機 ASR — 在您的電腦上執行，資料不會離開本裝置。",
 		"insertAria": "新字詞",
 		"editorAria": "{{filename}} 的逐字稿",
 		"transcribeNow": "立即產生逐字稿",

@@ -53,7 +53,8 @@ export function useTranscriptionLabel(): (view: AssetTranscriptionView) => strin
 				// otherwise completely silent. The speed shows on any backend: "is this
 				// moving, and how fast" is the same question at 5× as at 0.9×.
 				const suffix: string[] = [];
-				if (isCpuBackend(view.backend)) suffix.push("CPU");
+				if (view.backend === "qwen3-mlx") suffix.push("Qwen3-ASR 1.7B · 8-bit");
+				else if (isCpuBackend(view.backend)) suffix.push("CPU");
 				const speed = realtimeSpeed(view.rtf);
 				if (speed !== null) suffix.push(`${speed.toFixed(1)}×`);
 				return suffix.length === 0 ? head : `${head} · ${suffix.join(" · ")}`;

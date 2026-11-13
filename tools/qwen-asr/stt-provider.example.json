@@ -1,0 +1,7 @@
+{
+	"provider": "qwen3-mlx",
+	"pythonPath": "/absolute/path/qwen3-runtime/.venv/bin/python",
+	"serverPath": "/absolute/path/qwen3-runtime/qwen_server.py",
+	"asrModelPath": "/absolute/path/qwen3-runtime/models/Qwen3-ASR-1.7B-8bit",
+	"alignerModelPath": "/absolute/path/qwen3-runtime/models/Qwen3-ForcedAligner-0.6B-8bit"
+}

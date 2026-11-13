@@ -1,3 +1,4 @@
+import { joinTranscriptText } from "./joinTranscriptText";
 import type { CaptionSegment } from "./transcribe";
 
 /** Nudge caption starts earlier (seconds); Whisper onsets run slightly late. Do not offset ends too, that pulls lines off-screen early. */
@@ -276,7 +277,7 @@ export function groupTimedCaptionWordsIntoLines(
 			out.push({
 				startSec: s,
 				endSec: e,
-				text: slice.map((w) => w.text.trim()).join(" "),
+				text: joinTranscriptText(slice.map((w) => w.text.trim())),
 			});
 		}
 	};
@@ -324,7 +325,7 @@ export function splitMergedCaptionsByWordBounds(
 			out.push({
 				startSec: seg.startSec,
 				endSec: seg.endSec,
-				text: words.join(" "),
+				text: joinTranscriptText(words),
 			});
 			continue;
 		}
@@ -454,7 +455,7 @@ function splitOneSegmentByWordBounds(
 		result.push({
 			startSec: s,
 			endSec: e,
-			text: words.slice(from, to).join(" "),
+			text: joinTranscriptText(words.slice(from, to)),
 		});
 	}
 	if (result.length > 0) {

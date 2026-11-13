@@ -37,6 +37,8 @@ export interface PlanChunksOptions {
 	targetSec?: number;
 	/** How far on either side of the ideal boundary to hunt for a pause. */
 	searchSec?: number;
+	/** Hard ceiling for helpers with a shorter context; the search stays before this limit. */
+	maxSec?: number;
 }
 
 /**
@@ -101,9 +103,13 @@ export function planChunks(
 	// One frame is the floor: a target shorter than the unit the scan works in
 	// would put the ideal boundary BEFORE the earliest legal cut, which is the
 	// only way the loop below could fail to make progress.
-	const targetSamples = Math.max(
+	const maxSamples = Math.max(
 		frameSamples,
-		Math.round((options.targetSec ?? DEFAULT_TARGET_SEC) * sampleRate),
+		Math.round((options.maxSec ?? Number.POSITIVE_INFINITY) * sampleRate),
+	);
+	const targetSamples = Math.min(
+		maxSamples,
+		Math.max(frameSamples, Math.round((options.targetSec ?? DEFAULT_TARGET_SEC) * sampleRate)),
 	);
 	const searchSamples = Math.max(0, Math.round((options.searchSec ?? 3) * sampleRate));
 
@@ -119,7 +125,7 @@ export function planChunks(
 		// The search window never reaches back to `start` (a zero-length chunk would
 		// loop forever) and never past the end of the buffer.
 		const from = Math.max(start + frameSamples, ideal - searchSamples);
-		const to = Math.min(samples.length, ideal + searchSamples);
+		const to = Math.min(samples.length, ideal + searchSamples, start + maxSamples);
 		// No clamping needed on either side: `ideal >= from` because `targetSamples`
 		// is at least one frame, and every value the scan can return lies in
 		// `[from, to)` — so the cut is always past `start` and inside the buffer.

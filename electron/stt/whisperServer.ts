@@ -13,6 +13,7 @@ import {
 	parseEmissions,
 } from "./ctcAlign";
 import { resolveBinaryPath } from "./gpuDetector";
+import type { QwenMlxProviderConfig } from "./providerConfig";
 import { anchorWordsOnSpeech } from "./snapWordBoundaries";
 import type {
 	SttBackend,
@@ -71,6 +72,8 @@ export interface WhisperServerStartOptions {
 	binaryPath?: string | null;
 	/** Externally-resolved backend (logs only); null = auto. */
 	backend?: SttBackend | null;
+	/** Local Python helper using the same /inference protocol, with Qwen word alignment. */
+	qwenConfig?: QwenMlxProviderConfig;
 }
 
 export interface WhisperServerStatus {
@@ -255,9 +258,15 @@ export class WhisperServerManager {
 			};
 		}
 
-		const resolved = options.binaryPath
-			? { path: options.binaryPath, backend: options.backend ?? "whispercpp-cpu" }
-			: await resolveBinaryPath();
+		const qwen = options.backend === "qwen3-mlx" ? options.qwenConfig : undefined;
+		if (options.backend === "qwen3-mlx" && !qwen) {
+			throw new Error("Qwen STT requires its local runtime configuration");
+		}
+		const resolved = qwen
+			? { path: qwen.pythonPath, backend: "qwen3-mlx" as const }
+			: options.binaryPath
+				? { path: options.binaryPath, backend: options.backend ?? "whispercpp-cpu" }
+				: await resolveBinaryPath();
 		const binaryPath = resolved.path;
 		if (!binaryPath) {
 			const message =
@@ -285,20 +294,34 @@ export class WhisperServerManager {
 			if (this.shuttingDown) {
 				throw new Error("whisper-stt-server manager is shutting down");
 			}
-			const args = [
-				"--model",
-				options.modelPath,
-				"--port",
-				String(port),
-				"--host",
-				"127.0.0.1",
-				"--threads",
-				String(Math.max(1, os.cpus().length)),
-			];
-			if (options.vadModelPath && existsSync(options.vadModelPath)) {
-				args.push("--vad-model", options.vadModelPath);
+			const args = qwen
+				? [
+						qwen.serverPath,
+						"--port",
+						String(port),
+						"--host",
+						"127.0.0.1",
+						"--asr-model",
+						qwen.asrModelPath,
+						"--aligner-model",
+						qwen.alignerModelPath,
+					]
+				: [
+						"--model",
+						options.modelPath,
+						"--port",
+						String(port),
+						"--host",
+						"127.0.0.1",
+						"--threads",
+						String(Math.max(1, os.cpus().length)),
+					];
+			if (!qwen) {
+				if (options.vadModelPath && existsSync(options.vadModelPath)) {
+					args.push("--vad-model", options.vadModelPath);
+				}
+				if (forceCpu) args.push("--cpu");
 			}
-			if (forceCpu) args.push("--cpu");
 			const child = spawn(binaryPath, args, { stdio: ["ignore", "pipe", "pipe"] });
 			const activeBackend: SttBackend = forceCpu ? "whispercpp-cpu" : resolved.backend;
 
@@ -361,7 +384,7 @@ export class WhisperServerManager {
 				await Promise.race([
 					WhisperServerManager.pollUntilReady(
 						`http://127.0.0.1:${port}`,
-						30_000,
+						qwen ? 120_000 : 30_000,
 						() => this.process === child,
 					),
 					exitedBeforeReady,
@@ -384,6 +407,8 @@ export class WhisperServerManager {
 		try {
 			return await launch(false);
 		} catch (err) {
+			// A failed MLX launch cannot be retried with whisper.cpp's --cpu arguments.
+			if (qwen) throw err;
 			const startupLog = `${err instanceof Error ? err.message : String(err)} ${this.stderrTail}`;
 			const startupLines = startupLog.split(/\r?\n/);
 			const mentionsGpuBackend = startupLines.some((line) =>
@@ -427,6 +452,15 @@ export class WhisperServerManager {
 		}
 	}
 
+	/** Best effort: MLX stops after its current model call, not in the middle of a GPU kernel. */
+	cancel(): void {
+		if (this.backend !== "qwen3-mlx" || !this.port) return;
+		void fetch(`${this.baseUrl()}/cancel`, {
+			method: "POST",
+			signal: AbortSignal.timeout(2_000),
+		}).catch(() => undefined);
+	}
+
 	/** Permanently prevent respawn, then stop the currently owned helper. */
 	async shutdown(): Promise<void> {
 		this.shuttingDown = true;
@@ -446,6 +480,7 @@ export class WhisperServerManager {
 
 	private toBackend(value: string | undefined): SttBackend {
 		switch (value) {
+			case "qwen3-mlx":
 			case "whispercpp-metal":
 			case "whispercpp-vulkan":
 			case "whispercpp-cuda":
@@ -627,13 +662,20 @@ export class WhisperServerManager {
 				language: opts.language,
 				prompt: opts.prompt,
 			});
+			// Forced alignment can legitimately contain sub-20ms or zero-length tokens.
+			// Keep those Qwen times; minimum display spans remain a caption-layer concern.
+			const backend = this.toBackend(json.backend);
 			const raw = json.segments ?? [];
 			const segments: SttPhraseSegment[] = raw
 				.map((seg) => {
 					const text = (seg.text ?? "").trim();
 					const startSec = this.toSec(seg.start, 0);
 					const endSec = this.toSec(seg.end, startSec + 0.5);
-					return { text, startSec, endSec: Math.max(endSec, startSec + 0.05) };
+					return {
+						text,
+						startSec,
+						endSec: Math.max(endSec, startSec + (backend === "qwen3-mlx" ? 0 : 0.05)),
+					};
 				})
 				.filter((s) => s.text.length > 0);
 			const speech = json.speech?.map((s) => ({
@@ -652,7 +694,7 @@ export class WhisperServerManager {
 						return {
 							word,
 							startSec,
-							endSec: Math.max(startSec + 0.02, endSec),
+							endSec: Math.max(startSec + (backend === "qwen3-mlx" ? 0 : 0.02), endSec),
 							anchorSec,
 							confidence,
 						};
@@ -660,13 +702,18 @@ export class WhisperServerManager {
 				)
 				.filter((w) => w.word.length > 0);
 			let alignSec = 0;
-			const backend = this.toBackend(json.backend);
 			// GPU only. On the CPU the aligner's forward pass costs +29% (English) to
 			// +58% (French) of a transcription, against +9% to +14% on Vulkan, and
 			// character-level DTW alone is already within 16 ms median there
 			// (tools/stt-eval/word-timing, issue #948). Not asking also means a
 			// CPU-only machine never downloads the model.
-			if (speech?.length && words.length && opts.alignerFor && backend !== "whispercpp-cpu") {
+			if (
+				speech?.length &&
+				words.length &&
+				opts.alignerFor &&
+				backend !== "whispercpp-cpu" &&
+				backend !== "qwen3-mlx"
+			) {
 				try {
 					const modelPath = await opts.alignerFor(detectedLanguage);
 					if (modelPath) {
@@ -689,7 +736,12 @@ export class WhisperServerManager {
 			// Phrase edges go on the helper's speech intervals, aligner or not: the
 			// VAD is the better judge of where speech starts after a pause (see
 			// snapWordBoundaries.ts).
-			const wordSegments: SttWordSegment[] = anchorWordsOnSpeech(words, speech);
+			// Qwen's forced aligner already supplied word boundaries; Whisper's CTC/VAD
+			// adjustment would overwrite them (and its /emissions endpoint is absent).
+			const wordSegments: SttWordSegment[] =
+				backend === "qwen3-mlx"
+					? words.map(({ anchorSec: _anchorSec, ...word }) => word)
+					: anchorWordsOnSpeech(words, speech);
 			const timing = this.toTiming(json.timing);
 			// The aligner is part of what this chunk cost.
 			if (timing && alignSec > 0) {

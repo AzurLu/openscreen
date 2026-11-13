@@ -177,7 +177,7 @@
 		"editWord": "Edit \"{{word}}\"",
 		"laneFeedsCaptions": "Captions are burnt from this lane.",
 		"insertedWord": "Added by you. There is no audio for it.",
-		"whisperHint": "Transcribe uses local Whisper — runs on your computer, no data leaves the device.",
+		"whisperHint": "Transcribe uses local ASR — runs on your computer, no data leaves the device.",
 		"insertAria": "New word",
 		"editorAria": "Transcript for {{filename}}",
 		"transcribeNow": "Transcribe now",

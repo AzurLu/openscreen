@@ -13,6 +13,7 @@
 //
 // Stored in the `legacyEditor` passthrough envelope, like `settings.ts`.
 
+import { joinTranscriptText } from "@/lib/captioning/joinTranscriptText";
 import type { AxcutDocument, AxcutTranscript } from "../schema";
 
 export interface CaptionTranslation {
@@ -215,7 +216,7 @@ export function captionTranslationUnits(transcript: AxcutTranscript): CaptionTra
 
 		current.segmentIds.push(segment.id);
 		current.endSec = Math.max(current.endSec, segment.endSec);
-		current.text = `${current.text} ${text}`;
+		current.text = joinTranscriptText([current.text, text]);
 		wordCount += text.split(/\s+/).length;
 
 		if (SENTENCE_END.test(current.text) || wordCount >= UNIT_MAX_WORDS) flush();

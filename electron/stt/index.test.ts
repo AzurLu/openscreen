@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, type MockInstance, vi } fr
 
 import { planChunks } from "./chunking";
 import { _resetSttManagerForTests, getSttManager, SttManager, shutdownStt } from "./index";
+import { type QwenMlxProviderConfig, readSttProviderConfig } from "./providerConfig";
 import type { SttStatusEvent, SttTranscribeResponse } from "./transcriptionContract";
 
 // We swap the long-lived modules for fakes so the manager's `init()` and
@@ -18,6 +19,7 @@ const fakeWhisperServer = {
 	},
 	transcribe: vi.fn(),
 	stop: vi.fn(),
+	cancel: vi.fn(),
 	shutdown: vi.fn(),
 };
 
@@ -30,10 +32,13 @@ vi.mock("./whisperServer", () => {
 		status = fakeWhisperServer.status;
 		transcribe = fakeWhisperServer.transcribe;
 		stop = fakeWhisperServer.stop;
+		cancel = fakeWhisperServer.cancel;
 		shutdown = fakeWhisperServer.shutdown;
 	}
 	return { WhisperServerManager: FakeWhisperServerManager };
 });
+
+vi.mock("./providerConfig", () => ({ readSttProviderConfig: vi.fn(() => null) }));
 
 vi.mock("./modelManager", () => ({
 	ensureModels: vi.fn(async () => undefined),
@@ -60,6 +65,8 @@ describe("SttManager", () => {
 	let warnSpy: MockInstance<typeof console.warn>;
 
 	beforeEach(() => {
+		vi.mocked(readSttProviderConfig).mockReturnValue(null);
+		fakeWhisperServer.cancel.mockClear();
 		fakeWhisperServer.start.mockClear();
 		fakeWhisperServer.transcribe.mockClear();
 		fakeWhisperServer.stop.mockClear();
@@ -392,6 +399,95 @@ describe("SttManager", () => {
 		// drops the job silently instead of toasting an engine failure.
 		expect((error as Error).name).toBe("AbortError");
 		expect(fakeWhisperServer.transcribe).toHaveBeenCalledOnce();
+	});
+
+	describe("Qwen provider", () => {
+		const config: QwenMlxProviderConfig = {
+			provider: "qwen3-mlx",
+			pythonPath: "/runtime/python",
+			serverPath: "/runtime/qwen_server.py",
+			asrModelPath: "/models/asr",
+			alignerModelPath: "/models/aligner",
+		};
+		beforeEach(() => {
+			vi.mocked(readSttProviderConfig).mockReturnValue(config);
+			fakeWhisperServer.start.mockResolvedValue({ port: 9000, backend: "qwen3-mlx" });
+			fakeWhisperServer.transcribe.mockResolvedValue({
+				segments: [{ text: "中文", startSec: 0.1, endSec: 0.5 }],
+				wordSegments: [{ word: "中文", startSec: 0.1, endSec: 0.5 }],
+				detectedLanguage: "zh",
+				backend: "qwen3-mlx",
+			});
+		});
+		it("skips all Whisper model downloads and reports Qwen during initialization", async () => {
+			const { ensureModels } = await import("./modelManager");
+			vi.mocked(ensureModels).mockClear();
+			const sink = vi.fn<(event: SttStatusEvent) => void>();
+			await new SttManager().init({ statusSink: sink });
+			expect(ensureModels).not.toHaveBeenCalled();
+			expect(fakeWhisperServer.start).toHaveBeenCalledWith({
+				backend: "qwen3-mlx",
+				binaryPath: config.pythonPath,
+				modelPath: config.asrModelPath,
+				qwenConfig: config,
+			});
+			expect(sink.mock.calls[0][0]).toMatchObject({ phase: "model", backend: "qwen3-mlx" });
+		});
+		it("caps chunks at 30 seconds and preserves absolute offsets, language and glossary", async () => {
+			const samples = new Float32Array(65 * 16000);
+			const result = await new SttManager().transcribe({ samples, prompt: "Qwen3 ASR" });
+			const requests = fakeWhisperServer.transcribe.mock.calls.map(([request]) => request);
+			expect(requests).toHaveLength(3);
+			let offset = 0;
+			for (const [i, request] of requests.entries()) {
+				expect(request.samples.length / 16000).toBeLessThanOrEqual(30);
+				expect(request.language).toBe(i === 0 ? undefined : "zh");
+				expect(request.prompt).toBe("Qwen3 ASR");
+				expect(result.wordSegments[i].startSec).toBeCloseTo(offset + 0.1);
+				offset += request.samples.length / 16000;
+			}
+			expect(offset).toBeCloseTo(65);
+			expect(result.backend).toBe("qwen3-mlx");
+		});
+		it("restarts with the same Python and model config after a helper failure", async () => {
+			fakeWhisperServer.transcribe.mockRejectedValueOnce(new Error("helper died"));
+			await new SttManager().transcribe({ samples: new Float32Array(16000) });
+			expect(fakeWhisperServer.start).toHaveBeenCalledTimes(2);
+			expect(fakeWhisperServer.start.mock.calls[1][0]).toBe(
+				fakeWhisperServer.start.mock.calls[0][0],
+			);
+			expect(fakeWhisperServer.start.mock.calls[1][0].qwenConfig).toEqual(config);
+		});
+		it("does not retry a helper cancellation rejection", async () => {
+			const manager = new SttManager();
+			fakeWhisperServer.transcribe.mockImplementationOnce(async () => {
+				manager.cancel();
+				throw new Error("HTTP 409 cancelled");
+			});
+			await expect(manager.transcribe({ samples: new Float32Array(16000) })).rejects.toMatchObject({
+				name: "AbortError",
+			});
+			expect(fakeWhisperServer.cancel).toHaveBeenCalledOnce();
+			expect(fakeWhisperServer.transcribe).toHaveBeenCalledOnce();
+			expect(fakeWhisperServer.start).toHaveBeenCalledOnce();
+		});
+		it("honors cancellation while cold model initialization is still pending", async () => {
+			let finish: () => void = () => {
+				throw new Error("Initialization did not start");
+			};
+			fakeWhisperServer.start.mockImplementationOnce(
+				() =>
+					new Promise((resolve) => {
+						finish = () => resolve({ port: 9000, backend: "qwen3-mlx" });
+					}),
+			);
+			const manager = new SttManager();
+			const run = manager.transcribe({ samples: new Float32Array(16000) });
+			manager.cancel();
+			finish();
+			await expect(run).rejects.toMatchObject({ name: "AbortError" });
+			expect(fakeWhisperServer.transcribe).not.toHaveBeenCalled();
+		});
 	});
 
 	it("shutdown() stops whisper-stt-server", async () => {

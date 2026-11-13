@@ -9,6 +9,7 @@ import {
 	ensureModels,
 	modelPaths,
 } from "./modelManager";
+import { type QwenMlxProviderConfig, readSttProviderConfig } from "./providerConfig";
 import type {
 	SttPhraseSegment,
 	SttStatusEvent,
@@ -17,7 +18,7 @@ import type {
 	SttTranscribeResponse,
 	SttWordSegment,
 } from "./transcriptionContract";
-import { WhisperServerManager } from "./whisperServer";
+import { WhisperServerManager, type WhisperServerStartOptions } from "./whisperServer";
 
 /**
  * Owner of the long-lived STT pipeline. One instance per Electron app.
@@ -111,8 +112,8 @@ export class SttManager {
 	private readonly statusSinks = new Set<(event: SttStatusEvent) => void>();
 	private initPromise: Promise<void> | null = null;
 	/** Kept from `prepare()` so a chunk retry can respawn a helper that died mid-run. */
-	private modelPath: string | null = null;
-	private vadModelPath: string | null = null;
+	private startOptions: WhisperServerStartOptions | null = null;
+	private providerConfig: QwenMlxProviderConfig | null = null;
 	/**
 	 * Bumped by `cancel()`. The chunk loop compares it against the value it
 	 * captured on entry, so a cancel that lands after a new run started cannot
@@ -218,6 +219,7 @@ export class SttManager {
 	cancel(): void {
 		this.cancelEpoch++;
 		this.extraction?.abort();
+		this.server.cancel();
 		for (const download of this.alignerDownloads.values()) download.abort(cancelledError());
 	}
 
@@ -253,6 +255,30 @@ export class SttManager {
 	}
 
 	private async prepare(): Promise<void> {
+		this.providerConfig = readSttProviderConfig(app.getPath("userData"));
+		if (this.providerConfig) {
+			const config = this.providerConfig;
+			this.startOptions = {
+				backend: "qwen3-mlx",
+				binaryPath: config.pythonPath,
+				modelPath: config.asrModelPath,
+				qwenConfig: config,
+			};
+			this.emit({ phase: "model", model: "qwen3-mlx", backend: "qwen3-mlx" });
+			if (this.shuttingDown) throw cancelledError();
+			try {
+				await this.server.start(this.startOptions);
+			} catch (error) {
+				if (this.shuttingDown) throw cancelledError();
+				throw error;
+			}
+			if (this.shuttingDown) {
+				await this.server.shutdown();
+				throw cancelledError();
+			}
+			this.emit({ phase: "transcribe", backend: "qwen3-mlx" });
+			return;
+		}
 		const modelsDir = this.getModelsDir();
 		this.emit({ phase: "model", model: "whisper", downloadedBytes: 0, totalBytes: 0 });
 		await ensureModels({
@@ -270,13 +296,9 @@ export class SttManager {
 		if (this.shuttingDown) throw cancelledError();
 
 		const paths = modelPaths(modelsDir);
-		this.modelPath = paths.whisper;
-		this.vadModelPath = paths["silero-vad"];
+		this.startOptions = { modelPath: paths.whisper, vadModelPath: paths["silero-vad"] };
 		try {
-			await this.server.start({
-				modelPath: paths.whisper,
-				vadModelPath: paths["silero-vad"],
-			});
+			await this.server.start(this.startOptions);
 		} catch (error) {
 			if (this.shuttingDown) throw cancelledError();
 			throw error;
@@ -308,9 +330,10 @@ export class SttManager {
 		language: string | undefined,
 		prompt: string | undefined,
 	): Promise<Awaited<ReturnType<WhisperServerManager["transcribe"]>>> {
+		const epoch = this.cancelEpoch;
 		let lastError: unknown;
 		for (let attempt = 1; attempt <= CHUNK_ATTEMPTS; attempt++) {
-			if (this.shuttingDown) throw cancelledError();
+			if (this.shuttingDown || this.cancelEpoch !== epoch) throw cancelledError();
 			try {
 				return await this.server.transcribe({
 					samples,
@@ -320,14 +343,12 @@ export class SttManager {
 				});
 			} catch (error) {
 				lastError = error;
-				if (this.shuttingDown) throw cancelledError();
+				if (this.shuttingDown || this.cancelEpoch !== epoch) throw cancelledError();
 				if (attempt === CHUNK_ATTEMPTS) break;
-				if (this.modelPath) {
-					await this.server
-						.start({ modelPath: this.modelPath, vadModelPath: this.vadModelPath })
-						.catch(() => undefined);
+				if (this.startOptions) {
+					await this.server.start(this.startOptions).catch(() => undefined);
 				}
-				if (this.shuttingDown) throw cancelledError();
+				if (this.shuttingDown || this.cancelEpoch !== epoch) throw cancelledError();
 				await new Promise((resolve) => setTimeout(resolve, 500 * attempt));
 			}
 		}
@@ -352,9 +373,9 @@ export class SttManager {
 	}
 
 	async transcribe(req: SttTranscribeRequest): Promise<SttTranscribeResponse> {
-		await this.init();
-
 		const epoch = this.cancelEpoch;
+		await this.init();
+		if (this.shuttingDown || this.cancelEpoch !== epoch) throw cancelledError();
 		this.alignersFailed.clear();
 		// Extraction is part of the run, and on a long file it is the part the user used
 		// to watch the editor freeze through. Doing it here means the renderer hands over
@@ -363,7 +384,11 @@ export class SttManager {
 		// simply moved to the other side of the IPC.
 		const samples = req.samples ?? (await this.extract(req));
 		const totalSec = samples.length / SAMPLE_RATE;
-		const chunks = planChunks(samples, SAMPLE_RATE);
+		const chunks = planChunks(
+			samples,
+			SAMPLE_RATE,
+			this.providerConfig ? { targetSec: 30, searchSec: 3, maxSec: 30 } : {},
+		);
 		this.emit({ phase: "transcribe", completedSec: 0, totalSec });
 
 		const segments: SttPhraseSegment[] = [];

@@ -177,7 +177,7 @@
 		"editWord": "Editar \"{{word}}\"",
 		"laneFeedsCaptions": "As legendas são gravadas a partir desta faixa.",
 		"insertedWord": "Adicionada por você. Não há áudio para ela.",
-		"whisperHint": "A transcrição usa o Whisper local — roda no seu computador, nenhum dado sai do dispositivo.",
+		"whisperHint": "A transcrição usa o ASR local — roda no seu computador, nenhum dado sai do dispositivo.",
 		"insertAria": "Nova palavra",
 		"editorAria": "Transcrição de {{filename}}",
 		"transcribeNow": "Transcrever agora",

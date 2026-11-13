@@ -177,7 +177,7 @@
 		"editWord": "Upravit „{{word}}”",
 		"laneFeedsCaptions": "Titulky jsou generovány z této stopy.",
 		"insertedWord": "Přidáno vámi. Není k tomu žádný zvuk.",
-		"whisperHint": "Přepis používá lokální Whisper: běží na vašem počítači a žádná data neopouštějí zařízení.",
+		"whisperHint": "Přepis používá lokální ASR: běží na vašem počítači a žádná data neopouštějí zařízení.",
 		"insertAria": "Nové slovo",
 		"editorAria": "Přepis pro {{filename}}",
 		"transcribeNow": "Přepsat nyní",

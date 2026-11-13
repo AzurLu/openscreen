@@ -22,6 +22,7 @@ import {
 	transcriptHasSpeech,
 	transcriptionFailureHintKey,
 } from "@/lib/ai-edition/transcription/status";
+import { joinTranscriptText } from "@/lib/captioning/joinTranscriptText";
 import { formatBytes } from "@/utils/formatBytes";
 import {
 	TranscriptionProgressBar,
@@ -524,9 +525,9 @@ export function MediaStage({
 								}}
 							>
 								{transcript ? (
-									(transcript.segments ?? [])
-										.map((seg) => (seg as { text?: string }).text ?? "")
-										.join(" ") || t("mediaStage.transcriptEmpty")
+									joinTranscriptText(
+										(transcript.segments ?? []).map((seg) => (seg as { text?: string }).text ?? ""),
+									) || t("mediaStage.transcriptEmpty")
 								) : (
 									<span style={{ color: "var(--muted)" }}>
 										{selectedBusy
